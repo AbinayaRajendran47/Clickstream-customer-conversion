@@ -1,264 +1,136 @@
 import streamlit as st
 import pandas as pd
+import pickle
 import numpy as np
 import matplotlib.pyplot as plt
-import mlflow.pyfunc
+import seaborn as sns
 
-# Set the MLflow tracking URI
-mlflow.set_tracking_uri("http://127.0.0.1:5000")
+# Loading models
+label_encoder = pickle.load(open(r"D:\Projects\clickstream_data\le2_clothing_model.pkl", 'rb'))
+classifier = pickle.load(open(r"D:\Projects\clickstream_data\random_forest_classifier_model.pkl", 'rb'))
+regressor = pickle.load(open(r"D:\Projects\clickstream_data\gradient_boosting_model.pkl", 'rb'))
+regressor_scaler = pickle.load(open(r"D:\Projects\clickstream_data\regression_standard_scaler.pkl", 'rb'))
+classifier_scaler = pickle.load(open(r"D:\Projects\clickstream_data\classification_standard_scaler.pkl", 'rb'))
 
-# Load models (cached for performance)
-@st.cache_resource
-def load_models():
-    clustering_model = mlflow.pyfunc.load_model("models:/KMeans Clustering/1")
-    classification_model = mlflow.pyfunc.load_model("models:/Random Forest Classifier/1")
-    regression_model = mlflow.pyfunc.load_model("models:/Random Forest Regressor/1")
-    return clustering_model, classification_model, regression_model
+# Set page configuration and add title
+st.set_page_config(layout="wide")
+st.title("🛒  E-Commerce Clickstream Prediction App 🛍️ ")
+# Add custom CSS for background color
+st.sidebar.header("Upload Data or Enter Manually")
+# File upload and model type
+uploaded_file = st.sidebar.file_uploader("📁 Upload CSV File", type=['csv'])
+model_type = st.sidebar.radio("Select Model Type", ("Regression", "Classification"))
+# Feature lists
+regression_features = ['page1_main_category', 'page2_clothing_model', 'colour']
+classify_features = ['page1_main_category', 'page2_clothing_model', 'colour', 'order', 'price','page', 'location', 'model_photography']
 
-clustering_model, classification_model, regression_model = load_models()
+# Main category and clothing models
+main_dict = {'Trousers': 1, 'Skirts': 2, 'Blouses': 3, 'Shirts': 4}
+Trousers = ['A15', 'A2', 'A39', 'A1', 'A9', 'A7', 'A29', 'A11', 'A12', 'A17', 'A5', 'A4', 'A22', 'A18', 'A25', 'A27', 'A8', 'A30', 'A6', 'A35', 'A10', 'A3', 'A33', 'A14', 'A34', 'A20', 'A32', 'A13', 'A21', 'A28', 'A41', 'A31', 'A24', 'A40', 'A42', 'A37', 'A23', 'A16', 'A26', 'A43', 'A36', 'A38', 'A19']
+Skirts = ['B24', 'B32', 'B3', 'B10', 'B13', 'B19', 'B12', 'B16', 'B4', 'B11', 'B8', 'B2', 'B15', 'B9', 'B21', 'B31', 'B1', 'B7', 'B14', 'B26', 'B23', 'B17', 'B20', 'B27', 'B28', 'B25', 'B22', 'B30', 'B6', 'B33', 'B34', 'B29', 'B5']
+Blouses = ['C11', 'C35', 'C14', 'C15', 'C57', 'C40', 'C33', 'C44', 'C9', 'C50', 'C55', 'C51', 'C21', 'C17', 'C34', 'C43', 'C22', 'C54', 'C5', 'C12', 'C6', 'C2', 'C46', 'C53', 'C25', 'C29', 'C26', 'C36', 'C48', 'C10', 'C20', 'C13', 'C30', 'C18', 'C23', 'C1', 'C19', 'C56', 'C39', 'C59', 'C7', 'C45', 'C37', 'C28', 'C4', 'C27', 'C42', 'C32', 'C41', 'C16', 'C52', 'C31', 'C3', 'C38', 'C8', 'C24', 'C49', 'C58', 'C47']
+Shirts = ['P48', 'P23', 'P51', 'P33', 'P11', 'P7', 'P82', 'P1', 'P56', 'P62', 'P12', 'P43', 'P16', 'P4', 'P49', 'P3', 'P6', 'P47', 'P61', 'P17', 'P15', 'P57', 'P64', 'P20', 'P65', 'P37', 'P19', 'P5', 'P63', 'P74', 'P69', 'P39', 'P60', 'P40', 'P44', 'P21', 'P46', 'P38', 'P14', 'P52', 'P26', 'P41', 'P18', 'P68', 'P29', 'P2', 'P34', 'P36', 'P70', 'P72', 'P77', 'P50', 'P32', 'P78', 'P45', 'P53', 'P42', 'P58', 'P35', 'P30', 'P8', 'P10', 'P67', 'P59', 'P25', 'P9', 'P80', 'P75', 'P13', 'P71', 'P73', 'P76', 'P27', 'P55', 'P24', 'P81', 'P31', 'P66', 'P28']
 
-# Sidebar for task selection
-st.sidebar.title("Choose Task")
-task = st.sidebar.selectbox(
-    "Select a Machine Learning Task:",
-    ["Clustering", "Regression", "Classification"]
-)
+# Color mapping
+colors = {
+    "Beige": "#F5F5DC", "Black": "#000000", "Blue": "#0000FF", "Brown": "#A52A2A", 
+    "Burgundy": "#800020", "Gray": "#808080", "Green": "#008000", "Navy": "#000080", 
+    "Purple": "#800080", "Olive": "#808000", "Pink": "#FFC0CB", "Red": "#FF0000", 
+    "Violet": "#8A2BE2", "White": "#FFFFFF"
+}
 
-# Task: Clustering
-if task == "Clustering":
-    st.title("Clustering - Recommendations Based on Session Data")
-    st.markdown("""
-    This section uses a KMeans clustering model to recommend groups based on session data.
-    """)
-
-    # Input fields for clustering
-    session_length = st.number_input("Session Length", value=4.0)
-    page1_main_category_sale = st.checkbox("Page1 Main Category: Sale", value=False)
-    page1_main_category_blouses = st.checkbox("Page1 Main Category: blouses", value=False)
-    page1_main_category_skirts = st.checkbox("Page1 Main Category: Skirts", value=False)
-    page1_main_category_trousers = st.checkbox("Page1 Main Category: Trousers", value=False)
-    continent_Asia = st.checkbox("Continent: Asia", value=False)
-    continent_north_america = st.checkbox("Continent: North America", value=False)
-    continent_oceania = st.checkbox("Continent: Oceania", value=False)
-    continent_europe = st.checkbox("Continent: Europe", value=True)
-
-    # Prepare input DataFrame for clustering
-    clustering_input = pd.DataFrame({
-        'session_length': [session_length],
-        'page1_main_category_sale': [page1_main_category_sale],
-        'page1_main_category_blouses': [page1_main_category_blouses],
-        'page1_main_category_skirts': [page1_main_category_skirts],
-        'page1_main_category_trousers': [page1_main_category_trousers],
-        'continent_Asia': [continent_Asia],
-        'continent_North America': [continent_north_america],
-        'continent_Oceania': [continent_oceania],
-        'continent_Europe': [continent_europe]
-    })
-    clustering_input = clustering_input.astype(int)
-    
-    # Predict cluster
-    if st.button("Predict Cluster"):
-        cluster_label = clustering_model.predict(clustering_input)[0]
-        st.success(f"Predicted Cluster: {cluster_label}")
+# Function for selecting clothing options
+def first3():
+    page1_main_category = st.selectbox("Main Category", ['Trousers', 'Skirts', 'Blouses', 'Shirts'])
+    page1_main_category = main_dict[page1_main_category]
         
-        # Recommendations based on predicted cluster
-        st.subheader("Cluster-Based Recommendations")
-
-        if cluster_label == 0:
-            st.markdown("""
-            **Cluster 0: High-Engagement European Shoppers**
-            - Long session lengths with no specific category preference.
-            - Promote curated collections or trending items to capture interest.
-            - Highlight exclusive deals to keep them engaged.
-            """)
-        elif cluster_label == 1:
-            st.markdown("""
-            **Cluster 1: Quick Browsers in Europe**
-            - Short sessions with no specific focus.
-            - Simplify navigation and feature popular products prominently.
-            - Use personalized recommendations to encourage deeper exploration.
-            """)
-        elif cluster_label == 2:
-            st.markdown("""
-            **Cluster 2: Focused Trousers Shoppers**
-            - Preference for trousers and short session lengths.
-            - Showcase more options within the trousers category.
-            - Highlight complementary products, such as matching tops or accessories.
-            """)
-        elif cluster_label == 3:
-            st.markdown("""
-            **Cluster 3: Multi-Category North American Users**
-            - Moderate engagement with multiple categories.
-            - Suggest bundles or "shop the look" collections.
-            - Use targeted ads for trending products in their region.
-            """)
-        elif cluster_label == 4:
-            st.markdown("""
-            **Cluster 4: Skirts Lovers in Europe**
-            - Preference for skirts and shorter session lengths.
-            - Promote seasonal skirt collections.
-            - Highlight complementary items, such as shoes or tops.
-            """)
-        elif cluster_label == 5:
-            st.markdown("""
-            **Cluster 5: Oceania Shoppers with Mixed Preferences**
-            - Short sessions and engagement across sale and skirts.
-            - Focus on discounts and promotions for skirts.
-            - Use email campaigns to re-engage them with sales alerts.
-            """)
-        elif cluster_label == 6:
-            st.markdown("""
-            **Cluster 6: Sale-Focused European Shoppers**
-            - Long session lengths and strong preference for sale items.
-            - Emphasize ongoing sales and exclusive offers.
-            - Create urgency with "limited time deals."
-            """)
-        elif cluster_label == 7:
-            st.markdown("""
-            **Cluster 7: Trousers Enthusiasts with High Engagement**
-            - Long sessions focused on trousers.
-            - Offer premium trousers collections and customization options.
-            - Provide loyalty rewards or incentives for frequent buyers.
-            """)
-        elif cluster_label == 8:
-            st.markdown("""
-            **Cluster 8: High-Engagement Skirts Shoppers**
-            - Long sessions with exclusive focus on skirts.
-            - Promote premium skirt collections or limited-edition designs.
-            - Highlight related products to build complete outfits.
-            """)
-        elif cluster_label == 9:
-            st.markdown("""
-            **Cluster 9: High-Engagement Generalists in Europe**
-            - Very long sessions with no specific category focus.
-            - Offer curated collections, such as "Top Picks for You."
-            - Focus on cross-category bundling to maximize value.
-            """)
-        else:
-            st.markdown("""
-            **Unidentified Cluster**
-            - No specific behavior identified. Continue collecting data for further insights.
-            """)
-            # Visualizations
-        st.subheader("Visualizations")
-
-
-        # Visualization: Bar chart of input features
-        st.subheader("Input Features Visualization")
-        fig, ax = plt.subplots(figsize=(8, 4))
-        clustering_input.iloc[0].plot(kind="bar", color="red", ax=ax)
-        plt.title(f"Input Features for Cluster {cluster_label}")
-        plt.xlabel("Features")
-        plt.ylabel("Values")
-        st.pyplot(fig)
-
-
-# Task: Regression
-elif task == "Regression":
-    st.title("Regression - Price Prediction")
-    st.markdown("""
-    This section uses a regression model to predict the price of a clothing item.
-    colours: 1-beige 2-black 3-blue 4-brown 5-burgundy 6-gray 7-green 8-navy blue 9-of many colors 
-    10-olive 11-pink 12-red 13-violet 14-white
-    """)
-
-    # Input fields for regression
-    clothing_model_number = st.number_input("Clothing Model Number", value=23)
-    page1_main_category_sale = st.checkbox("Page1 Main Category: Sale", value=False)
-    page1_main_category_blouses = st.checkbox("Page1 Main Category: blouses", value=False)
-    page1_main_category_skirts = st.checkbox("Page1 Main Category: Skirts", value=False)
-    page1_main_category_trousers = st.checkbox("Page1 Main Category: Trousers", value=False)
-    colour = st.number_input("Colour", value =2 )
-    continent_Asia = st.checkbox("Continent: Asia", value=True)
-    continent_europe = st.checkbox("Continent: Europe", value=True)
-    continent_north_america = st.checkbox("Continent: North America", value=False)
-    continent_oceania = st.checkbox("Continent: Oceania", value=False)
-
-    # Prepare input DataFrame for regression
-    regression_input = pd.DataFrame({
-        'clothing_model_number': [clothing_model_number],
-        'page1_main_category_sale': [page1_main_category_sale],
-        'page1_main_category_blouses': [page1_main_category_blouses],
-        'page1_main_category_skirts': [page1_main_category_skirts],
-        'page1_main_category_trousers': [page1_main_category_trousers],
-        'colour':[colour],
-        'continent_Asia': [continent_Asia],
-        'continent_Europe': [continent_europe],
-        'continent_North America': [continent_north_america],
-        'continent_Oceania': [continent_oceania]
-    })
-
-    regression_input = regression_input.astype(int)
-    # Predict price
-    if st.button("Predict Price"):
-        predicted_price = regression_model.predict(regression_input)[0]
-        st.success(f"Predicted Price: ${predicted_price:.2f}")
-
-        # Visualization: Bar chart of input features
-        st.subheader("Input Features Visualization")
-        fig, ax = plt.subplots(figsize=(10, 6))
-        regression_input.iloc[0].plot(kind="bar", color="blue", ax=ax)
-        plt.title("Input Features for Regression")
-        plt.xlabel("Features")
-        plt.ylabel("Values")
-        st.pyplot(fig)
-
-# Task: Classification
-elif task == "Classification":
-    st.title("Classification - Price Category Prediction")
-    st.markdown("""
-    This section uses a classification model to predict the price category.
-    """)
-
-    # Input fields for manual classification prediction
-    continent_Asia = st.checkbox("Continent: Asia", value=True)
-    continent_europe = st.checkbox("Continent: Europe", value=True)
-    continent_north_america = st.checkbox("Continent: North America", value=False)
-    continent_oceania = st.checkbox("Continent: Oceania", value=False)
-    session_length = st.number_input("Session Length", value=4.0)
-    clothing_model_number = st.number_input("Clothing Model Number", value=23)
-    page1_main_category_sale = st.checkbox("Page1 Main Category: Sale", value=False)
-    page1_main_category_blouses = st.checkbox("Page1 Main Category: blouses", value=False) 
-    page1_main_category_skirts = st.checkbox("Page1 Main Category: Skirts", value=False)
-    page1_main_category_trousers = st.checkbox("Page1 Main Category: Trousers", value=False)
-    clicks_sale = st.number_input("Clicks on Sale", value=2.0)
-    clicks_skirts = st.number_input("Clicks on Skirts", value=0.0)
-    clicks_trousers = st.number_input("Clicks on Trousers", value=0.0)
-
-    
-    # Prepare input DataFrame for classification
-    classification_input = pd.DataFrame({
-        'continent_Asia': [continent_Asia],
-        'continent_Europe': [continent_europe],
-        'continent_North America': [continent_north_america],
-        'continent_Oceania': [continent_oceania],
-        'session_length': [session_length],
-        'clothing_model_number': [clothing_model_number],
-        'page1_main_category_sale': [page1_main_category_sale],
-        'page1_main_category_blouses': [page1_main_category_blouses],
-        'page1_main_category_skirts': [page1_main_category_skirts],
-        'page1_main_category_trousers': [page1_main_category_trousers],
-        'clicks_sale': [clicks_sale],
-        'clicks_skirts': [clicks_skirts],
-        'clicks_trousers': [clicks_trousers]
-
-    })
-    
-    classification_input = classification_input.astype(int)
-    # Predict price category
-    if st.button("Predict Price Category"):
-        predicted_category = classification_model.predict(classification_input)[0]
-        category_result = "Yes" if predicted_category == 1 else "No"
-        st.success(f"Predicted Price Category (Purchased): {category_result}")
+    if page1_main_category == 1:
+        page2_clothing_model = st.selectbox("Model", Trousers)
+    elif page1_main_category == 2:
+        page2_clothing_model = st.selectbox("Model", Skirts)    
+    elif page1_main_category == 3:
+        page2_clothing_model = st.selectbox("Model", Blouses)
+    else:
+        page2_clothing_model = st.selectbox("Model", Shirts)
         
-        # Visualization: Bar chart for feature importance
-        st.subheader("Input Features Visualization")
-        fig, ax = plt.subplots(figsize=(8, 4))
-        classification_input.iloc[0].plot(kind="bar", color="orange", ax=ax)
-        plt.title(f"Input Features for Predicted Category: {predicted_category}")
-        plt.xlabel("Features")
-        plt.ylabel("Values")
-        st.pyplot(fig)
+    page2_clothing_model = label_encoder.transform([page2_clothing_model])
+    selected_color = st.selectbox("Color", list(colors.keys()))
+    hex_code = colors[selected_color]
+    st.markdown(f"<div style='width:100px; height:50px; background-color:{hex_code}; border:1px solid #000'></div>", unsafe_allow_html=True)
+    colour_dict = {'Beige': 1, 'Black': 2, 'Blue': 3, 'Brown': 4, 'Burgundy': 5, 'Gray': 6, 'Green': 7, 'Navy': 8, 'Purple': 9, 'Olive': 10, 'Pink': 11, 'Red': 12, 'Violet': 13, 'White': 14}
+    colour = colour_dict[selected_color]
 
-else:
-    st.write("Please select a valid task.")
+    return page1_main_category, page2_clothing_model[0], colour
+
+# Model predictions for regression and classification
+if model_type == "Regression":
+    if uploaded_file is not None:
+        df = pd.read_csv(uploaded_file)
+        st.title("Regression - Price Prediction")
+        st.markdown("This section uses a regression model to predict the price of a clothing item.")
+        st.dataframe(df[regression_features + ['price']], width=1000, height=400)   
+        row_index = st.sidebar.selectbox("Select a Row for Prediction", df.index)
+        selected_row = df.loc[[row_index], regression_features]
+        selected_row['page2_clothing_model'] = label_encoder.transform(selected_row['page2_clothing_model'])
+        selected_row = regressor_scaler.transform(selected_row)
+    else:
+        st.title("Regression - Price Prediction")
+        st.header("✨ Enter Data Manually Below ✨")
+        st.markdown("This section uses a regression model to predict the price of a clothing item.")
+        page1_main_category, page2_clothing_model, colour = first3()
+        selected_row = [page1_main_category, page2_clothing_model, colour]
+        selected_row = np.array(selected_row).reshape(1, -1)
+        selected_row = regressor_scaler.transform(selected_row)
+        
+    if st.button("✨ Predict Price ✨"):
+        with st.spinner('Processing...'):
+            predicted = regressor.predict(selected_row)
+            st.subheader("Predicted Price")
+            st.markdown(f"<h3 style='color:green;'>${predicted[0]:.2f}</h3>", unsafe_allow_html=True)
+            st.balloons() # Celebration animation
+         
+elif model_type == "Classification":
+    
+    if uploaded_file is not None:
+        df = pd.read_csv(uploaded_file)
+        st.title("Classification - Purchase Prediction")
+        st.markdown("""
+    This section uses a classification model to predict the probability of a user purchasing an item from a clothing category.
+    """)
+        st.dataframe(df[classify_features + ['price_2']], width=1000, height=400)        
+        row_index = st.sidebar.selectbox("Select a Row for Prediction", df.index)
+        selected_row = df.loc[[row_index], classify_features]
+        selected_row['page2_clothing_model'] = label_encoder.transform(selected_row['page2_clothing_model'])
+        selected_row = classifier_scaler.transform(selected_row)
+    else:
+        st.title("Classification - Purchase Prediction")
+        st.markdown("""
+    This section uses a classification model to predict the probability of a user purchasing an item from a clothing category.
+    """)
+        page1_main_category, page2_clothing_model, colour = first3()
+
+        order = st.slider("Order", 1, 100)
+        price = st.slider("Price", 0, 100)
+        page = st.number_input("Page",min_value=1,max_value=5)
+        location = st.selectbox("Product Location",['Top Left', 'Top in the Middle', 'Top Right', 'Bottom Left', 'Bottom in the Middle', 'Bottom Right'])
+        location_dict = {'Top Left': 1, 'Top in the Middle': 2, 'Top Right': 3, 'Bottom Left': 4, 'Bottom in the Middle': 5, 'Bottom Right': 6}
+        location = location_dict[location]
+        model_photography = st.selectbox("Model Photography",['En Face', 'Profile'])
+        model_photography_dict = {'En Face': 1, 'Profile': 2}
+        model_photography = model_photography_dict[model_photography]
+        
+        selected_row = [page1_main_category, page2_clothing_model, colour, order, price, page , location, model_photography]
+        selected_row = np.array(selected_row).reshape(1, -1)
+        selected_row = classifier_scaler.transform(selected_row)
+
+    if st.button("🚀 Classify Purchase 🚀"):
+        with st.spinner('Classifying...'):
+            predicted = classifier.predict(selected_row)
+            st.subheader("Purchase Classification")
+            if predicted[0] == 2:
+                st.markdown("<h3 style='color:green;'>Going To Buy</h3>", unsafe_allow_html=True)
+                st.balloons() # Celebration animation
+            else:
+                st.markdown("<h3 style='color:red;'>Not Going To Buy</h3>", unsafe_allow_html=True)
+                st.snow() # Celebration animation
+ 
